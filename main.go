@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -33,6 +34,22 @@ func main() {
 	if v := os.Getenv("DURATION"); v != "" {
 		dur, _ = strconv.Atoi(v)
 	}
+
+	op := "play"
+	if v := os.Getenv("OP"); v != "" {
+		op = v
+	}
+	log.Println(op)
+
+	addr := ":8765"
+	if v := os.Getenv("ADDR"); v != "" {
+		addr = v
+	}
+
+	wavPath := "/home/eranl/WAV_FILES/server/"
+
+	http.Handle("/", http.FileServer(http.Dir(wavPath)))
+
 	log.SetFlags(log.LstdFlags | log.Llongfile)
 	//16 bit
 	sf := pa.SampleFormat(8)
@@ -48,16 +65,29 @@ func main() {
 
 	done := make(chan struct{})
 	recch := make(chan struct{})
-	Recored(ab, sf, uint64(desiredSR), channels, recch, done)
-	go playMidi(recch, dur)
-	println("Before done")
-	<-done
-	println("Play")
-	Play(ab, sf, uint64(desiredSR), channels, dur)
+	stream := make(chan struct{}, 1)
+	Recored(ab, sf, uint64(desiredSR), channels, recch, done, stream)
+	if op == "udp" {
+		log.Println("UDP mode...")
+		start := make(chan struct{})
+		go playMidi(recch, dur, start)
+		ServeUdp(addr, ab, start, stream)
+	} else if op == "play" {
+		go playMidi(recch, dur, nil)
+		<-done
+		Play(ab, sf, uint64(desiredSR), channels, dur)
+
+	} else if op == "save" {
+		go playMidi(recch, dur, nil)
+		<-done
+		saveWav(ab, uint32(desiredSR), wavPath+GetFileName())
+		http.ListenAndServe(addr, nil)
+	}
+
 	pa.Terminate()
 }
 
-func playMidi(recch chan struct{}, dur int) {
+func playMidi(recch chan struct{}, dur int, start chan struct{}) {
 	ctx := gousb.NewContext()
 	defer ctx.Close()
 
@@ -94,6 +124,11 @@ func playMidi(recch chan struct{}, dur int) {
 	on := []byte{9, 144, 60, 110}
 	off := []byte{9, 144, 60, 0}
 
+	if start != nil {
+		log.Println("Waiting for signal")
+		<-start
+	}
+
 	recch <- struct{}{}
 	for i := 0; i < dur; i++ {
 		ep.Write(off[:])
@@ -107,7 +142,7 @@ func playMidi(recch chan struct{}, dur int) {
 		}
 		time.Sleep(990 * time.Millisecond)
 	}
-	recch <- struct{}{}
 	println("Finish midi")
+	recch <- struct{}{}
 	ep.Write(off[:])
 }
