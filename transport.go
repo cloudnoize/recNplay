@@ -19,10 +19,8 @@ func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, stream chan str
 
 	for {
 		var b [1024]byte
-		_, add, _ := conn.ReadFrom(b[:])
-
 		log.Println("Ready, send me signal to start")
-		conn.ReadFrom(b[:])
+		_, add, _ := conn.ReadFrom(b[:])
 		log.Println("starting...")
 		start <- struct{}{}
 		log.Println("Start to stream audio,have ", ab.q.ReadAvailble(), " samples")
