@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -24,13 +25,7 @@ func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, stream chan str
 		log.Println("starting...")
 		start <- struct{}{}
 		log.Println("Start to stream audio,have ", ab.q.ReadAvailble(), " samples")
-		// for i, v := range ab.q.Q {
-		// 	if (i*2)%1024 == 0 {
-		// 		conn.WriteTo(b[:], add)
-		// 	}
-		// 	conv.Int16ToBytes(v, b[:], (i*2)%1024)
 
-		// }
 		var i int
 		sleep := 10
 		if v := os.Getenv("SLEEP"); v != "" {
@@ -47,5 +42,23 @@ func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, stream chan str
 			}
 		}
 
+	}
+}
+
+func GetHttpHandler(m *MidiContext) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		snote, ok := r.URL.Query()["note"]
+
+		if !ok || len(snote) < 1 {
+			return
+		}
+
+		note, err := strconv.Atoi(snote[0])
+		if err != nil {
+			return
+		}
+
+		log.Println("Set note ", note)
+		m.notes <- note
 	}
 }
