@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -31,6 +32,10 @@ var (
 		Name: "bad_samples",
 		Help: "The total number of bad samples",
 	})
+	buuferPrev = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "buffer_prev",
+		Help: "USe previous buffer",
+	})
 )
 
 type streamImp struct {
@@ -41,6 +46,7 @@ type streamImp struct {
 	test    bool
 	count   int
 	measure int
+	toErr   bool
 	start   time.Time
 }
 
@@ -98,11 +104,15 @@ func (s *streamImp) out16bit(outputBuffer unsafe.Pointer, frames uint64) {
 			validSamples.Inc()
 		} else {
 			badSamples.Inc()
+			i--
 		}
 	}
 }
 
 func (s *streamImp) Write(b []byte) (n int, err error) {
+	if s.toErr {
+		return 0, errors.New("Generated err")
+	}
 	if s.bitrate == 16 {
 		s.Write16int(b)
 		return len(b), nil
@@ -148,13 +158,6 @@ func main() {
 	println("frames - ", frames)
 	sigs := make(chan os.Signal, 1)
 	done := make(chan bool, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		sig := <-sigs
-		fmt.Println()
-		fmt.Println(sig)
-		done <- true
-	}()
 
 	addr := os.Getenv("ADDR")
 
@@ -193,36 +196,41 @@ func main() {
 
 	s, _ := pa.OpenDefaultStream(0, 1, sf, float64(sr), uint64(frames), nil)
 
-	go func() {
-		for {
-			var buf [4096]byte
-			reader := bufio.NewReader(os.Stdin)
-			fmt.Print("Enter signal: ")
-			text, _ := reader.ReadString('\n')
-			println("sending ", text)
-			conn.Write([]byte(text))
-			// time.Sleep(1 * time.Second)
-			n, err := conn.Read(buf[:])
-			if err != nil {
-				log.Fatal(err)
-			}
-			_, err = si.Write(buf[:n])
-			if err != nil {
-				log.Fatal(err)
-			}
-			log.Printf("Buffered first %d bytes, start stream...", n)
-			go io.Copy(si, conn)
-			s.Start()
-			return
-		}
-	}()
+	reader := bufio.NewReader(os.Stdin)
+	fmt.Print("Enter signal: ")
+	text, _ := reader.ReadString('\n')
+	println("sending ", text)
+	conn.Write([]byte(text))
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
-	defer func() {
-		s.Stop()
-		s.Close()
+	go func() {
+		var buf [4096]byte
+		n, err := conn.Read(buf[:])
+
+		if err != nil {
+			log.Fatal(err)
+		}
+		_, err = si.Write(buf[:n])
+		if err != nil {
+			log.Fatal(err)
+		}
+		s.Start()
+		go func() {
+			sig := <-sigs
+			fmt.Println()
+			fmt.Println(sig)
+			si.toErr = true
+			s.Stop()
+			s.Close()
+			pa.Terminate()
+			conn.Close()
+		}()
+		io.Copy(si, conn)
+		done <- true
 	}()
 
 	<-done
+
 	fmt.Println("exiting")
 
 }
