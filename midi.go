@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"time"
+
+	"github.com/google/gousb"
 )
 
 type MidiContext struct {
@@ -21,10 +23,11 @@ func NewMidiContext() *MidiContext {
 func (m *MidiContext) SetNote() {
 	for {
 		note := <-m.notes
+		log.Println("Midi set note to ", note)
 		m.note = note
 	}
 }
-func (m *MidiContext) playMidi(recch chan struct{}, dur int, start chan struct{}) {
+func (m *MidiContext) playMidi(recch chan struct{}, dur int, start chan struct{}, done chan struct{}) {
 	ctx := gousb.NewContext()
 	defer ctx.Close()
 
@@ -83,5 +86,8 @@ func (m *MidiContext) playMidi(recch chan struct{}, dur int, start chan struct{}
 	}
 	println("Finish midi")
 	recch <- struct{}{}
+	if done != nil {
+		done <- struct{}{}
+	}
 	ep.Write(m.noteOff[:])
 }
