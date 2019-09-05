@@ -39,15 +39,17 @@ var (
 )
 
 type streamImp struct {
-	q32     *locklessq.Qfloat32
-	q16     *locklessq.Qint16
-	bitrate int
-	frames  int
-	test    bool
-	count   int
-	measure int
-	toErr   bool
-	start   time.Time
+	q32       *locklessq.Qfloat32
+	q16       *locklessq.Qint16
+	cb16      *CyclicBuffer16bit
+	seqOfBads uint
+	bitrate   int
+	frames    int
+	test      bool
+	count     int
+	measure   int
+	toErr     bool
+	start     time.Time
 }
 
 func (s *streamImp) CallBack(inputBuffer, outputBuffer unsafe.Pointer, frames uint64) {
@@ -102,9 +104,10 @@ func (s *streamImp) out16bit(outputBuffer unsafe.Pointer, frames uint64) {
 		if ok {
 			(*ob)[i] = int16(val)
 			validSamples.Inc()
+			s.cb16.push(int16(val))
 		} else {
 			badSamples.Inc()
-			i--
+			(*ob)[i] = s.cb16.pop()
 		}
 	}
 }
@@ -183,7 +186,7 @@ func main() {
 		sr, _ = strconv.Atoi(v)
 	}
 
-	si := &streamImp{q32: locklessq.NewQfloat32(int32(sr * 10)), q16: locklessq.NewQint16(int32(sr * 10)), bitrate: bitrate, frames: frames, test: test}
+	si := &streamImp{q32: locklessq.NewQfloat32(int32(sr * 10)), q16: locklessq.NewQint16(int32(sr * 10)), bitrate: bitrate, frames: frames, test: test, cb16: New16BitCyclicBuffer(256)}
 
 	pa.CbStream = si
 
