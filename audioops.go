@@ -37,7 +37,7 @@ func (r *AudioBuffer) PlayCallBack(inputBuffer, outputBuffer unsafe.Pointer, fra
 	}
 }
 
-func Recored(ab *AudioBuffer, sf pa.SampleFormat, desiredSR uint64, channels int, recch chan struct{}, done chan struct{}, stream chan struct{}) {
+func Recored(ab *AudioBuffer, sf pa.SampleFormat, desiredSR uint64, channels int, recch chan struct{}, done chan struct{}) {
 	var (
 		in pa.PaStreamParameters
 	)
@@ -81,7 +81,6 @@ func Recored(ab *AudioBuffer, sf pa.SampleFormat, desiredSR uint64, channels int
 		s.Stop()
 		s.Close()
 		println("Send done...")
-		stream <- struct{}{}
 		done <- struct{}{}
 
 	}()

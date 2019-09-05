@@ -62,22 +62,24 @@ func main() {
 
 	done := make(chan struct{})
 	recch := make(chan struct{})
-	stream := make(chan struct{}, 1)
-	Recored(ab, sf, uint64(desiredSR), channels, recch, done, stream)
+	Recored(ab, sf, uint64(desiredSR), channels, recch, done)
 	midi := NewMidiContext()
 	if op == "udp" {
+		go midi.SetNote()
 		log.Println("UDP mode...")
 		start := make(chan struct{})
-		go midi.playMidi(recch, dur, start)
+		sdone := make(chan struct{})
+		go midi.playMidi(recch, dur, start, sdone)
 		go http.ListenAndServe(addr, GetHttpHandler(midi))
-		ServeUdp(addr, ab, start, stream)
+		ServeUdp(addr, ab, start, sdone)
+		<-done
 	} else if op == "play" {
-		go midi.playMidi(recch, dur, nil)
+		go midi.playMidi(recch, dur, nil, nil)
 		<-done
 		Play(ab, sf, uint64(desiredSR), channels, dur)
 
 	} else if op == "save" {
-		go midi.playMidi(recch, dur, nil)
+		go midi.playMidi(recch, dur, nil, nil)
 		<-done
 		saveWav(ab, uint32(desiredSR), wavPath+GetFileName())
 		http.ListenAndServe(addr, nil)

@@ -11,7 +11,7 @@ import (
 	"github.com/cloudnoize/conv"
 )
 
-func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, stream chan struct{}) {
+func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, done chan struct{}) {
 	conn, e := net.ListenPacket("udp", addr)
 	if e != nil {
 		println(e.Error())
@@ -33,13 +33,24 @@ func ServeUdp(addr string, ab *AudioBuffer, start chan struct{}, stream chan str
 		}
 		log.Printf("will sleep %d between writes\n", sleep)
 		for {
-			v, _ := ab.q.Pop()
-			conv.Int16ToBytes(v, b[:], (i*2)%1024)
-			i++
-			if (i*2)%1024 == 0 {
-				conn.WriteTo(b[:], add)
-				time.Sleep(time.Duration(sleep) * time.Millisecond)
+			select {
+			case <-done:
+				log.Println("Stopping UDP")
+				conn.Close()
+				return
+			default:
+				v, ok := ab.q.Pop()
+				if !ok {
+					continue
+				}
+				conv.Int16ToBytes(v, b[:], (i*2)%1024)
+				i++
+				if (i*2)%1024 == 0 {
+					conn.WriteTo(b[:], add)
+					time.Sleep(time.Duration(sleep) * time.Millisecond)
+				}
 			}
+
 		}
 
 	}
